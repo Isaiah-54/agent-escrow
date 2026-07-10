@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  walletAddress String   @unique
+  createdAt     DateTime @default(now())
+
+  escrowsCreated  Escrow[] @relation("Creator")
+  escrowsAccepted Escrow[] @relation("Worker")
+}
+
+model Escrow {
+  id          String   @id @default(cuid())
+  taskDescription String
+  successCriteria String
+  amount      String   // stored as string to avoid float precision issues with wei values
+  status      EscrowStatus @default(CREATED)
+
+  creatorId   String
+  creator     User     @relation("Creator", fields: [creatorId], references: [id])
+  workerId    String?
+  worker      User?    @relation("Worker", fields: [workerId], references: [id])
+
+  contractAddress String?
+  chainEscrowId   String?  // the ID assigned on-chain by the smart contract
+  txHashCreate    String?
+  txHashRelease   String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  submissions Submission[]
+  evaluations AIEvaluation[]
+  auditLogs   AuditLog[]
+}
+
+enum EscrowStatus {
+  CREATED
+  FUNDED
+  ACCEPTED
+  SUBMITTED
+  UNDER_REVIEW
+  RELEASED
+  REFUNDED
+  FAILED
+}
+
+model Submission {
+  id          String   @id @default(cuid())
+  escrowId    String
+  escrow      Escrow   @relation(fields: [escrowId], references: [id])
+  content     String   // the submitted work/result, or a link to it
+  evidenceUrl String?
+  createdAt   DateTime @default(now())
+
+  evaluations AIEvaluation[]
+}
+
+model AIEvaluation {
+  id             String   @id @default(cuid())
+  escrowId       String
+  escrow         Escrow   @relation(fields: [escrowId], references: [id])
+  submissionId   String
+  submission     Submission @relation(fields: [submissionId], references: [id])
+
+  verdict        Verdict
+  confidence     Float    // 0.0 - 1.0
+  reasoning      String
+  promptVersion  String   // which prompt template version was used, for auditability
+  rawModelOutput String   // full raw response, stored for debugging/audit
+
+  createdAt      DateTime @default(now())
+}
+
+enum Verdict {
+  PASS
+  FAIL
+  NEEDS_HUMAN_REVIEW
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  escrowId  String?
+  escrow    Escrow?  @relation(fields: [escrowId], references: [id])
+  action    String
+  actor     String   // wallet address or "system"
+  details   String
+  createdAt DateTime @default(now())
+}
