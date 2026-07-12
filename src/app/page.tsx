@@ -34,7 +34,7 @@ function truncate(addr: string) {
   return addr.slice(0, 6) + "…" + addr.slice(-4);
 }
 
-function StampBadge({ status, evaluation }: { status: string; evaluation?: Evaluation }) {
+function StampBadge({ status }: { status: string }) {
   if (status === "RELEASED") {
     return (
       <div className="font-display font-black text-xl tracking-wide border-4 border-[var(--verdict-green)] text-[var(--verdict-green)] px-4 py-1 -rotate-3 select-none">
@@ -46,6 +46,13 @@ function StampBadge({ status, evaluation }: { status: string; evaluation?: Evalu
     return (
       <div className="font-display font-black text-xl tracking-wide border-4 border-[var(--verdict-rust)] text-[var(--verdict-rust)] px-4 py-1 -rotate-3 select-none">
         FAIL
+      </div>
+    );
+  }
+  if (status === "DISPUTED") {
+    return (
+      <div className="font-display font-black text-lg tracking-wide border-4 border-[var(--verdict-rust)] text-[var(--verdict-rust)] px-3 py-1 -rotate-3 select-none">
+        DISPUTED
       </div>
     );
   }
@@ -144,6 +151,13 @@ export default function Docket() {
     setBusy(null);
   }
 
+  async function arbitrate(id: string) {
+    setBusy(id);
+    await fetch(`/api/escrows/${id}/arbitrate`, { method: "POST" });
+    await fetchEscrows();
+    setBusy(null);
+  }
+
   return (
     <main className="min-h-screen px-5 py-10 md:px-12 md:py-16 max-w-3xl mx-auto">
       <header className="mb-12 border-b border-[var(--ink-line)] pb-8">
@@ -219,108 +233,114 @@ export default function Docket() {
         </p>
       ) : (
         <div className="space-y-6">
-          {escrows.map((e) => {
-            const latestEval = e.evaluations?.[e.evaluations.length - 1];
-            return (
-              <article
-                key={e.id}
-                className="bg-[var(--parchment)] text-[var(--ink)] rounded-sm p-5 md:p-6 shadow-lg"
-              >
-                <div className="flex items-start justify-between gap-4 mb-3">
-                  <p className="font-mono text-xs uppercase tracking-widest text-[var(--ink)]/60">
-                    Case #{e.chainEscrowId ?? "—"}
-                  </p>
-                  <StampBadge status={e.status} evaluation={latestEval} />
-                </div>
-
-                <p className="font-display text-lg font-semibold mb-2">{e.taskDescription}</p>
-                <p className="text-sm text-[var(--ink)]/70 mb-3">
-                  <span className="font-mono uppercase text-xs">Criteria: </span>
-                  {e.successCriteria}
+          {escrows.map((e) => (
+            <article
+              key={e.id}
+              className="bg-[var(--parchment)] text-[var(--ink)] rounded-sm p-5 md:p-6 shadow-lg"
+            >
+              <div className="flex items-start justify-between gap-4 mb-3">
+                <p className="font-mono text-xs uppercase tracking-widest text-[var(--ink)]/60">
+                  Case #{e.chainEscrowId ?? "—"}
                 </p>
+                <StampBadge status={e.status} />
+              </div>
 
-                <div className="font-mono text-xs text-[var(--ink)]/60 mb-4 space-y-0.5">
+              <p className="font-display text-lg font-semibold mb-2">{e.taskDescription}</p>
+              <p className="text-sm text-[var(--ink)]/70 mb-3">
+                <span className="font-mono uppercase text-xs">Criteria: </span>
+                {e.successCriteria}
+              </p>
+
+              <div className="font-mono text-xs text-[var(--ink)]/60 mb-4 space-y-0.5">
+                <p>
+                  filed by {truncate(e.creator.walletAddress)}
+                  {e.worker && <> → accepted by {truncate(e.worker.walletAddress)}</>}
+                </p>
+                <p>{formatOkb(e.amount)} OKB bounty</p>
+                {e.txHashCreate && (
                   <p>
-                    filed by {truncate(e.creator.walletAddress)}
-                    {e.worker && <> → accepted by {truncate(e.worker.walletAddress)}</>}
+                    deposit tx:{" "}
+                    <a href={EXPLORER + e.txHashCreate} target="_blank" className="underline">
+                      {truncate(e.txHashCreate)}
+                    </a>
                   </p>
-                  <p>{formatOkb(e.amount)} OKB bounty</p>
-                  {e.txHashCreate && (
-                    <p>
-                      deposit tx:{" "}
-                      <a
-                        href={EXPLORER + e.txHashCreate}
-                        target="_blank"
-                        className="underline"
-                      >
-                        {truncate(e.txHashCreate)}
-                      </a>
-                    </p>
-                  )}
-                  {e.txHashRelease && (
-                    <p>
-                      settlement tx:{" "}
-                      <a
-                        href={EXPLORER + e.txHashRelease}
-                        target="_blank"
-                        className="underline"
-                      >
-                        {truncate(e.txHashRelease)}
-                      </a>
-                    </p>
-                  )}
-                </div>
-
-                {latestEval && (
-                  <div className="border-t border-[var(--ink)]/10 pt-3 mb-3 text-sm">
-                    <p className="font-mono text-xs uppercase tracking-wide text-[var(--ink)]/50 mb-1">
-                      AI verdict — {(latestEval.confidence * 100).toFixed(0)}% confidence
-                    </p>
-                    <p className="italic text-[var(--ink)]/80">{latestEval.reasoning}</p>
-                  </div>
                 )}
+                {e.txHashRelease && (
+                  <p>
+                    settlement tx:{" "}
+                    <a href={EXPLORER + e.txHashRelease} target="_blank" className="underline">
+                      {truncate(e.txHashRelease)}
+                    </a>
+                  </p>
+                )}
+              </div>
 
-                {e.status === "FUNDED" && (
+              {e.evaluations && e.evaluations.length > 0 && (
+                <div className="border-t border-[var(--ink)]/10 pt-3 mb-3 text-sm space-y-2">
+                  <p className="font-mono text-xs uppercase tracking-wide text-[var(--ink)]/50">
+                    Evaluation trail
+                  </p>
+                  {e.evaluations.map((ev, i) => (
+                    <div key={i} className="text-xs">
+                      <span className="font-mono uppercase text-[var(--ink)]/50">
+                        {(ev.confidence * 100).toFixed(0)}% confidence —{" "}
+                      </span>
+                      <span className="italic text-[var(--ink)]/80">{ev.reasoning}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {e.status === "FUNDED" && (
+                <button
+                  onClick={() => accept(e.id)}
+                  disabled={busy === e.id}
+                  className="font-mono text-xs uppercase tracking-wide bg-[var(--ink)] text-[var(--parchment)] px-4 py-2 rounded-sm disabled:opacity-50"
+                >
+                  {busy === e.id ? "Accepting…" : "Accept as Agent B"}
+                </button>
+              )}
+
+              {e.status === "ACCEPTED" && (
+                <div className="space-y-2">
+                  <textarea
+                    placeholder="Submitted work goes here…"
+                    value={drafts[e.id] || ""}
+                    onChange={(ev) => setDrafts({ ...drafts, [e.id]: ev.target.value })}
+                    className="w-full border border-[var(--ink)]/20 rounded-sm px-3 py-2 text-sm bg-white"
+                    rows={2}
+                  />
                   <button
-                    onClick={() => accept(e.id)}
-                    disabled={busy === e.id}
+                    onClick={() => submit(e.id)}
+                    disabled={busy === e.id || !drafts[e.id]}
                     className="font-mono text-xs uppercase tracking-wide bg-[var(--ink)] text-[var(--parchment)] px-4 py-2 rounded-sm disabled:opacity-50"
                   >
-                    {busy === e.id ? "Accepting…" : "Accept as Agent B"}
+                    {busy === e.id ? "Submitting…" : "Submit Work"}
                   </button>
-                )}
+                </div>
+              )}
 
-                {e.status === "ACCEPTED" && (
-                  <div className="space-y-2">
-                    <textarea
-                      placeholder="Submitted work goes here…"
-                      value={drafts[e.id] || ""}
-                      onChange={(ev) => setDrafts({ ...drafts, [e.id]: ev.target.value })}
-                      className="w-full border border-[var(--ink)]/20 rounded-sm px-3 py-2 text-sm bg-white"
-                      rows={2}
-                    />
-                    <button
-                      onClick={() => submit(e.id)}
-                      disabled={busy === e.id || !drafts[e.id]}
-                      className="font-mono text-xs uppercase tracking-wide bg-[var(--ink)] text-[var(--parchment)] px-4 py-2 rounded-sm disabled:opacity-50"
-                    >
-                      {busy === e.id ? "Submitting…" : "Submit Work"}
-                    </button>
-                  </div>
-                )}
+              {e.status === "SUBMITTED" && (
+                <button
+                  onClick={() => evaluate(e.id)}
+                  disabled={busy === e.id}
+                  className="font-mono text-xs uppercase tracking-wide bg-[var(--seal-gold)] text-[var(--ink)] px-4 py-2 rounded-sm disabled:opacity-50"
+                >
+                  {busy === e.id ? "Two agents judging…" : "Request AI Verdict"}
+                </button>
+              )}
 
-                {e.status === "SUBMITTED" && (
-                  <button
-                    onClick={() => evaluate(e.id)}
-                    disabled={busy === e.id}
-                    className="font-mono text-xs uppercase tracking-wide bg-[var(--seal-gold)] text-[var(--ink)] px-4 py-2 rounded-sm disabled:opacity-50"
-                  >
-                    {busy === e.id ? "Judging…" : "Request AI Verdict"}
-                  </button>
-                )}
-              </article>
-            );
-          })}
+              {e.status === "DISPUTED" && (
+                <button
+                  onClick={() => arbitrate(e.id)}
+                  disabled={busy === e.id}
+                  className="font-mono text-xs uppercase tracking-wide bg-[var(--verdict-rust)] text-[var(--parchment)] px-4 py-2 rounded-sm disabled:opacity-50"
+                >
+                  {busy === e.id ? "Arbitrator ruling…" : "Resolve Dispute (Arbitrator)"}
+                </button>
+              )}
+            </article>
+          ))}
         </div>
       )}
 
