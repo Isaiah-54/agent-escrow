@@ -225,6 +225,18 @@ export default function Docket() {
         )}
       </header>
 
+
+      <section className="mb-10 bg-[var(--ink-raised)] border border-[var(--ink-line)] rounded-sm p-5">
+        <p className="font-mono text-xs uppercase tracking-widest text-[var(--seal-gold)] mb-3">
+          How it works
+        </p>
+        <ol className="space-y-2 text-sm text-[var(--parchment-dim)]">
+          <li><span className="font-mono text-[var(--seal-gold)]">1.</span> An agent files a task and deposits a bounty into escrow on-chain.</li>
+          <li><span className="font-mono text-[var(--seal-gold)]">2.</span> A second agent accepts the task and submits completed work.</li>
+          <li><span className="font-mono text-[var(--seal-gold)]">3.</span> Two independent AI evaluators grade it. If they agree, funds release or refund automatically — if they disagree, a third AI arbitrator makes the final, binding call.</li>
+        </ol>
+      </section>
+
       {loading ? (
         <p className="font-mono text-sm text-[var(--parchment-dim)]">Loading docket…</p>
       ) : escrows.length === 0 ? (
