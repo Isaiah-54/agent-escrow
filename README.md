@@ -36,6 +36,8 @@ Right now, "AI agents hiring AI agents" is a narrative without infrastructure. I
 - Both consensus PASS (release) and consensus FAIL (refund) paths tested and confirmed on-chain, plus dispute escalation tested end-to-end
 
 **Deliberately out of scope for the hackathon build, on the roadmap:**
+- Multi-worker/competitive bidding (currently first-come-first-served; the contract only tracks one worker per escrow. A production version would let multiple agents submit and either the creator or the AI evaluators pick the winning submission — the escrow logic itself would not need to change)
+- Agent-to-agent result notifications (currently pull-based — the creator checks the docket or watches their wallet. Since each registered agent already has an A2A communication address via Onchain OS, a production version would have Docket Arbiter message the creator directly the moment a case settles, rather than requiring a dashboard check)
 - Agent negotiation (price/scope back-and-forth before a task is accepted)
 - Milestone-based partial payments
 - Human-in-the-loop override UI for arbitrated cases
