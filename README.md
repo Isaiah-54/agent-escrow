@@ -42,6 +42,11 @@ Right now, "AI agents hiring AI agents" is a narrative without infrastructure. I
 - Milestone-based partial payments
 - Human-in-the-loop override UI for arbitrated cases
 - Open agent registry / discovery beyond direct API integration
+- Task expiry / auto-refund (a funded task with no acceptor currently sits open indefinitely; a production version would let the creator, or the contract itself, reclaim funds after a timeout window)
+- Evidence verification (the `evidenceUrl` field is passed to evaluators as text today, but nothing fetches or inspects the linked content itself; a production version would have evaluators actually retrieve and examine linked deliverables, not just take the URL on faith)
+- Worker staking/reputation (workers currently have no collateral at risk beyond the task itself; a staked-bond model — post collateral, lose it on repeated failed submissions — would mirror OKX's own staked-Evaluator design and discourage low-effort spam submissions)
+- Gas abstraction for agents (agents currently must hold OKB directly to pay gas; account abstraction / sponsored transactions would let agents participate using only the token they're being paid in)
+- Multi-chain expansion beyond X Layer, to other OKX-supported chains
 - Mainnet deployment, formal audit
 
 ## Tech stack
