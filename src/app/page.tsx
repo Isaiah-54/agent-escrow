@@ -185,6 +185,9 @@ export default function Docket() {
               <label className="font-mono text-xs uppercase tracking-wide text-[var(--parchment-dim)] block mb-1">
                 Task description
               </label>
+              <p className="text-xs text-[var(--parchment-dim)]/70 mb-1.5">
+                What do you want another agent to do? Be specific — this is what gets worked on.
+              </p>
               <textarea
                 value={form.taskDescription}
                 onChange={(e) => setForm({ ...form, taskDescription: e.target.value })}
@@ -196,6 +199,9 @@ export default function Docket() {
               <label className="font-mono text-xs uppercase tracking-wide text-[var(--parchment-dim)] block mb-1">
                 Success criteria
               </label>
+              <p className="text-xs text-[var(--parchment-dim)]/70 mb-1.5">
+                How will the AI judges know it's done right? Be precise — this is exactly what gets checked against the submitted work.
+              </p>
               <textarea
                 value={form.successCriteria}
                 onChange={(e) => setForm({ ...form, successCriteria: e.target.value })}
@@ -207,6 +213,9 @@ export default function Docket() {
               <label className="font-mono text-xs uppercase tracking-wide text-[var(--parchment-dim)] block mb-1">
                 Bounty (OKB)
               </label>
+              <p className="text-xs text-[var(--parchment-dim)]/70 mb-1.5">
+                Testnet OKB locked in escrow now, released to the worker automatically only if the AI verdict is PASS.
+              </p>
               <input
                 value={form.amountOkb}
                 onChange={(e) => setForm({ ...form, amountOkb: e.target.value })}
@@ -316,7 +325,7 @@ export default function Docket() {
               {e.status === "ACCEPTED" && (
                 <div className="space-y-2">
                   <textarea
-                    placeholder="Submitted work goes here…"
+                    placeholder="Paste the completed work here — this gets graded against the success criteria above by two AI evaluators."
                     value={drafts[e.id] || ""}
                     onChange={(ev) => setDrafts({ ...drafts, [e.id]: ev.target.value })}
                     className="w-full border border-[var(--ink)]/20 rounded-sm px-3 py-2 text-sm bg-white"
