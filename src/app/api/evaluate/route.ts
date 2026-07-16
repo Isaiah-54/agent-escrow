@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 import { buildEvaluatorAPrompt, buildEvaluatorBPrompt, VERIFIER_PROMPT_VERSION } from "@/lib/prompts/verifierPromptV1";
 import { getVerifierContract } from "@/lib/contract";
 
 const prisma = new PrismaClient();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
 const CONFIDENCE_THRESHOLD = 0.75;
 
 async function runGemini(prompt: string) {
@@ -18,6 +20,16 @@ async function runGemini(prompt: string) {
   return { rawText, parsed: JSON.parse(rawText.trim()) as { verdict: string; confidence: number; reasoning: string } };
 }
 
+async function runOpenAI(prompt: string) {
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    response_format: { type: "json_object" },
+    messages: [{ role: "user", content: prompt }],
+  });
+  const rawText = completion.choices[0].message.content ?? "{}";
+  return { rawText, parsed: JSON.parse(rawText.trim()) as { verdict: string; confidence: number; reasoning: string } };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { escrowId } = await req.json();
@@ -27,7 +39,6 @@ export async function POST(req: NextRequest) {
       where: { id: escrowId },
       include: { submissions: { orderBy: { createdAt: "desc" }, take: 1 } },
     });
-
     if (!escrow) return NextResponse.json({ error: "Escrow not found" }, { status: 404 });
     if (escrow.status !== "SUBMITTED") {
       return NextResponse.json({ error: `Escrow is in ${escrow.status} state, not SUBMITTED` }, { status: 400 });
@@ -42,10 +53,9 @@ export async function POST(req: NextRequest) {
       evidenceUrl: submission.evidenceUrl,
     };
 
-    // --- Two independent agents evaluate the same submission in parallel ---
     const [a, b] = await Promise.all([
       runGemini(buildEvaluatorAPrompt(promptArgs)),
-      runGemini(buildEvaluatorBPrompt(promptArgs)),
+      runOpenAI(buildEvaluatorBPrompt(promptArgs)),
     ]);
 
     await prisma.aIEvaluation.create({
@@ -54,7 +64,7 @@ export async function POST(req: NextRequest) {
         submissionId: submission.id,
         verdict: a.parsed.verdict as "PASS" | "FAIL" | "NEEDS_HUMAN_REVIEW",
         confidence: a.parsed.confidence,
-        reasoning: `[Evaluator A] ${a.parsed.reasoning}`,
+        reasoning: `[Evaluator A · Gemini] ${a.parsed.reasoning}`,
         promptVersion: VERIFIER_PROMPT_VERSION,
         rawModelOutput: a.rawText,
       },
@@ -65,7 +75,7 @@ export async function POST(req: NextRequest) {
         submissionId: submission.id,
         verdict: b.parsed.verdict as "PASS" | "FAIL" | "NEEDS_HUMAN_REVIEW",
         confidence: b.parsed.confidence,
-        reasoning: `[Evaluator B] ${b.parsed.reasoning}`,
+        reasoning: `[Evaluator B · GPT-4o-mini] ${b.parsed.reasoning}`,
         promptVersion: VERIFIER_PROMPT_VERSION,
         rawModelOutput: b.rawText,
       },
@@ -80,11 +90,10 @@ export async function POST(req: NextRequest) {
         escrowId: escrow.id,
         action: "MULTI_AGENT_EVALUATION",
         actor: "system",
-        details: `Evaluator A: ${a.parsed.verdict} (${a.parsed.confidence}) · Evaluator B: ${b.parsed.verdict} (${b.parsed.confidence}) · agree=${agree}`,
+        details: `Evaluator A (Gemini): ${a.parsed.verdict} (${a.parsed.confidence}) · Evaluator B (GPT-4o-mini): ${b.parsed.verdict} (${b.parsed.confidence}) · agree=${agree}`,
       },
     });
 
-    // --- Evaluators disagree, or agree but lack confidence: escalate to arbitration ---
     if (!decisiveVerdict || !bothConfident) {
       await prisma.escrow.update({ where: { id: escrow.id }, data: { status: "DISPUTED" } });
       return NextResponse.json({
@@ -95,7 +104,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // --- Both evaluators agree with high confidence: settle automatically on-chain ---
     const passed = a.parsed.verdict === "PASS";
     const contract = getVerifierContract();
     const tx = await contract.submitVerdict(
@@ -104,7 +112,6 @@ export async function POST(req: NextRequest) {
       `Consensus: ${a.parsed.reasoning.slice(0, 150)}`
     );
     const receipt = await tx.wait();
-
     await prisma.escrow.update({
       where: { id: escrow.id },
       data: { status: passed ? "RELEASED" : "REFUNDED", txHashRelease: receipt.hash },
