@@ -3,10 +3,8 @@ import { PrismaClient } from "@prisma/client";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { buildArbitratorPrompt, VERIFIER_PROMPT_VERSION } from "@/lib/prompts/verifierPromptV1";
 import { getVerifierContract } from "@/lib/contract";
-
 const prisma = new PrismaClient();
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-
 async function runGemini(prompt: string) {
   const model = genAI.getGenerativeModel({
     model: "gemini-2.5-flash",
@@ -19,13 +17,9 @@ async function runGemini(prompt: string) {
     parsed: JSON.parse(rawText.trim()) as { verdict: string; confidence: number; reasoning: string },
   };
 }
-
-// POST /api/escrows/[id]/arbitrate — resolves a DISPUTED case with a
-// binding third-agent ruling, then settles on-chain.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-
     const escrow = await prisma.escrow.findUnique({
       where: { id },
       include: {
@@ -33,7 +27,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         evaluations: { orderBy: { createdAt: "desc" } },
       },
     });
-
     if (!escrow) return NextResponse.json({ error: "Escrow not found" }, { status: 404 });
     if (escrow.status !== "DISPUTED") {
       return NextResponse.json(
@@ -41,15 +34,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         { status: 400 }
       );
     }
-
     const submission = escrow.submissions[0];
     if (!submission) {
       return NextResponse.json({ error: "No submission found for this escrow" }, { status: 400 });
     }
-
-    // Pull only the two evaluations attached to THIS submission, so a
-    // second dispute cycle (if one ever happens) can't accidentally mix
-    // in stale evaluations from an earlier submission on the same escrow.
     const thisSubmissionEvals = escrow.evaluations.filter(
       (e) => e.submissionId === submission.id
     );
@@ -59,30 +47,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         { status: 400 }
       );
     }
-
-    // Evaluations are tagged in their reasoning text at creation time —
-    // recover A/B by that tag rather than by array order/insertion timing,
-    // which is not guaranteed under Promise.all.
-    const evalARecord = thisSubmissionEvals.find((e) => e.reasoning.startsWith("[Evaluator A]"));
-    const evalBRecord = thisSubmissionEvals.find((e) => e.reasoning.startsWith("[Evaluator B]"));
+    // Match "[Evaluator A]" or "[Evaluator A · <provider label>]" so this
+    // keeps working regardless of which model/provider produced the verdict.
+    const evalARecord = thisSubmissionEvals.find((e) => /^\[Evaluator A(\s*·[^\]]*)?\]/.test(e.reasoning));
+    const evalBRecord = thisSubmissionEvals.find((e) => /^\[Evaluator B(\s*·[^\]]*)?\]/.test(e.reasoning));
     if (!evalARecord || !evalBRecord) {
       return NextResponse.json(
         { error: "Could not identify Evaluator A and Evaluator B records among prior evaluations" },
         { status: 400 }
       );
     }
-
     const evalA = {
       verdict: evalARecord.verdict,
       confidence: evalARecord.confidence,
-      reasoning: evalARecord.reasoning.replace(/^\[Evaluator A\]\s*/, ""),
+      reasoning: evalARecord.reasoning.replace(/^\[Evaluator A(\s*·[^\]]*)?\]\s*/, ""),
     };
     const evalB = {
       verdict: evalBRecord.verdict,
       confidence: evalBRecord.confidence,
-      reasoning: evalBRecord.reasoning.replace(/^\[Evaluator B\]\s*/, ""),
+      reasoning: evalBRecord.reasoning.replace(/^\[Evaluator B(\s*·[^\]]*)?\]\s*/, ""),
     };
-
     const prompt = buildArbitratorPrompt({
       taskDescription: escrow.taskDescription,
       successCriteria: escrow.successCriteria,
@@ -91,11 +75,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       evalA,
       evalB,
     });
-
     const result = await runGemini(prompt);
-
-    // Arbitrator prompt explicitly forbids NEEDS_HUMAN_REVIEW, but guard
-    // against a model deviating from instructions rather than trusting it.
     if (result.parsed.verdict !== "PASS" && result.parsed.verdict !== "FAIL") {
       return NextResponse.json(
         {
@@ -105,7 +85,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         { status: 502 }
       );
     }
-
     await prisma.aIEvaluation.create({
       data: {
         escrowId: escrow.id,
@@ -117,7 +96,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         rawModelOutput: result.rawText,
       },
     });
-
     await prisma.auditLog.create({
       data: {
         escrowId: escrow.id,
@@ -126,7 +104,6 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         details: `Arbitrator ruled ${result.parsed.verdict} (confidence ${result.parsed.confidence}) after Evaluator A/B disagreement.`,
       },
     });
-
     const passed = result.parsed.verdict === "PASS";
     const contract = getVerifierContract();
     const tx = await contract.submitVerdict(
@@ -135,12 +112,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       `Arbitration: ${result.parsed.reasoning.slice(0, 150)}`
     );
     const receipt = await tx.wait();
-
     await prisma.escrow.update({
       where: { id: escrow.id },
       data: { status: passed ? "RELEASED" : "REFUNDED", txHashRelease: receipt.hash },
     });
-
     return NextResponse.json({
       status: passed ? "RELEASED" : "REFUNDED",
       txHash: receipt.hash,
