@@ -8,6 +8,7 @@ import { OKXFacilitatorClient } from "@okxweb3/x402-core";
 import { TOOLS, callFundEscrowTask, callAiVerificationSettlement } from "../../lib/mcpTools";
 
 const app = express();
+app.set("trust proxy", true);
 app.use(express.json());
 
 const NETWORK = "eip155:196"; // X Layer
