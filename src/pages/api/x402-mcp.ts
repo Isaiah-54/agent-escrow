@@ -39,6 +39,18 @@ app.use(
         description: "Docket Arbiter — escrow funding and AI-verified settlement, pay-per-call",
         mimeType: "application/json",
       },
+      [`GET ${ROUTE_PATH}`]: {
+        accepts: [
+          {
+            scheme: "exact",
+            network: NETWORK,
+            payTo: PAY_TO,
+            price: "$0.01",
+          },
+        ],
+        description: "Docket Arbiter — escrow funding and AI-verified settlement, pay-per-call",
+        mimeType: "application/json",
+      },
     },
     resourceServer
   )
@@ -99,10 +111,9 @@ app.post(ROUTE_PATH, async (req, res) => {
     return res.json(rpcError(id, -32000, err.message || "Internal error"));
   }
 });
-
-// Unprotected GET liveness/capabilities check — external reachability probes
-// (including OKX's own x402-check) expect a 200 here; real paid MCP traffic
-// (tools/list, tools/call) stays POST-only, behind the payment middleware above.
+// Payment-gated GET — matches OKX's own x402 SDK example pattern and satisfies
+// x402-check / platform reachability probes, which specifically expect a 402
+// challenge (then a 200 once paid) on GET, not just POST.
 app.get(ROUTE_PATH, (_req, res) => {
   res.json({
     name: "docket-arbiter-paid",
