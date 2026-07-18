@@ -100,6 +100,18 @@ app.post(ROUTE_PATH, async (req, res) => {
   }
 });
 
+// Unprotected GET liveness/capabilities check — external reachability probes
+// (including OKX's own x402-check) expect a 200 here; real paid MCP traffic
+// (tools/list, tools/call) stays POST-only, behind the payment middleware above.
+app.get(ROUTE_PATH, (_req, res) => {
+  res.json({
+    name: "docket-arbiter-paid",
+    version: "1.0.0",
+    protocolVersion: "2024-11-05",
+    status: "ok",
+  });
+});
+
 export default app;
 
 export const config = {
