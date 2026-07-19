@@ -127,6 +127,7 @@ export default app;
 
 export const config = {
   api: {
-    bodyParser: false, // Express (via express.json()) handles body parsing itself
+    bodyParser: false,
+    externalResolver: true, // Tells Next.js Express is handling this route
   },
 };
