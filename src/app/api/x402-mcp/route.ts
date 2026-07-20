@@ -5,7 +5,7 @@ import { TOOLS, callFundEscrowTask, callAiVerificationSettlement } from "@/lib/m
 const NETWORK = "eip155:196";
 const PAY_TO = process.env.PAY_TO_ADDRESS || "";
 const ENDPOINT = "https://agent-escrow.vercel.app/api/x402-mcp";
-const PRICE = "10000"; // 0.01 USDT in base units (6 decimals)
+const PRICE = "1"; // 0.000001 USDT — low enough for OKX review test wallet // 0.01 USDT in base units (6 decimals)
 const ASSET = "0x779ded0c9e1022225f8e0630b35a9b54be713736"; // USDT on X Layer
 
 const facilitatorClient = new OKXFacilitatorClient({
