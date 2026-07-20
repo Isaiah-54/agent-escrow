@@ -124,8 +124,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       evaluatorB: evalB,
       arbitrator: result.parsed,
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Arbitrate error:", err);
-    return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
+    return NextResponse.json({ error: (err instanceof Error ? err.message : "Internal error") }, { status: 500 });
   }
 }

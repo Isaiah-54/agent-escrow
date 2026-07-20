@@ -1,208 +1,126 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
-import { ethers } from "ethers";
-import { getCreatorContract, parseEscrowIdFromReceipt, getVerifierContract } from "@/lib/contract";
-import { getOrCreateUser } from "@/lib/users";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { buildEvaluatorAPrompt, buildEvaluatorBPrompt, VERIFIER_PROMPT_VERSION } from "@/lib/prompts/verifierPromptV1";
+import { withX402 } from "@okxweb3/x402-next";
+import { x402Server, X402_NETWORK, ensureX402Initialized } from "@/lib/x402Server";
+import { TOOLS, callFundEscrowTask, callAiVerificationSettlement } from "@/lib/mcpTools";
 
-const prisma = new PrismaClient();
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const CONFIDENCE_THRESHOLD = 0.75;
+// This is now the ONE canonical MCP endpoint. The old /api/x402-mcp route is
+// deleted â€” it duplicated this logic and hand-rolled a 402 response that
+// didn't match the x402 wire format (challenge belongs in the response body,
+// per PaymentRequired in the SDK, not a custom header), and it only ever
+// called facilitator.verify() and never .settle(), so a valid payment never
+// actually got captured on-chain. Both bugs are fixed by using the real
+// @okxweb3/x402-next middleware below, which handles verify AND settle.
 
-// --- Minimal MCP-compliant JSON-RPC 2.0 server, implemented directly ---
-// against Next.js Route Handlers (no Node req/res shimming needed).
+const PAY_TO = process.env.PAY_TO_ADDRESS as `0x${string}` | undefined;
+// Price is USD-denominated via the SDK's Money type ("$0.01" == 1 cent of the
+// network's default stablecoin); override with MCP_CALL_PRICE if you want a
+// different per-call price without a code change.
+const PRICE = process.env.MCP_CALL_PRICE || "$0.01";
 
-const TOOLS = [
-  {
-    name: "fund_escrow_task",
-    description:
-      "Creates and funds a new task in the on-chain escrow contract on X Layer. Locks a bounty until an AI verdict releases or refunds it.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        taskDescription: { type: "string", description: "What the worker agent needs to do" },
-        successCriteria: { type: "string", description: "Precise conditions the AI evaluators check the work against" },
-        amountOkb: { type: "string", description: 'Bounty amount in OKB, e.g. "0.01"' },
-      },
-      required: ["taskDescription", "successCriteria", "amountOkb"],
-    },
-  },
-  {
-    name: "ai_verification_settlement",
-    description:
-      "Two independent AI evaluators grade a submitted task against its success criteria in parallel. If they agree with high confidence, payment auto-releases or refunds on-chain. If they disagree, the case escalates to a third arbitrator. Requires an escrowId in SUBMITTED state.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        escrowId: { type: "string", description: "The escrow ID returned by fund_escrow_task, after work has been submitted" },
-      },
-      required: ["escrowId"],
-    },
-  },
-];
-
-async function runGemini(prompt: string) {
-  const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-flash",
-    generationConfig: { responseMimeType: "application/json" },
-  });
-  const result = await model.generateContent(prompt);
-  const rawText = result.response.text();
-  return { rawText, parsed: JSON.parse(rawText.trim()) as { verdict: string; confidence: number; reasoning: string } };
+if (!PAY_TO) {
+  throw new Error(
+    "PAY_TO_ADDRESS env var is required â€” this is the wallet that receives x402 payments for MCP tool calls."
+  );
 }
 
-async function callFundEscrowTask(args: { taskDescription: string; successCriteria: string; amountOkb: string }) {
-  const creatorContract = getCreatorContract();
-  const creatorAddress = (creatorContract.runner as ethers.Wallet).address;
-  const creatorUser = await getOrCreateUser(creatorAddress);
+type RpcId = string | number | null;
 
-  const value = ethers.parseEther(String(args.amountOkb));
-  const tx = await creatorContract.createAndFundEscrow(args.taskDescription, args.successCriteria, { value });
-  const receipt = await tx.wait();
-  const chainEscrowId = parseEscrowIdFromReceipt(receipt, creatorContract);
-
-  const escrow = await prisma.escrow.create({
-    data: {
-      taskDescription: args.taskDescription,
-      successCriteria: args.successCriteria,
-      amount: value.toString(),
-      status: "FUNDED",
-      creatorId: creatorUser.id,
-      chainEscrowId,
-      contractAddress: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS,
-      txHashCreate: receipt.hash,
-    },
-  });
-
-  return { escrowId: escrow.id, chainEscrowId, txHash: receipt.hash, status: "FUNDED" };
-}
-
-async function callAiVerificationSettlement(args: { escrowId: string }) {
-  const escrow = await prisma.escrow.findUnique({
-    where: { id: args.escrowId },
-    include: { submissions: { orderBy: { createdAt: "desc" }, take: 1 } },
-  });
-  if (!escrow) return { error: "Escrow not found" };
-  if (escrow.status !== "SUBMITTED") return { error: `Escrow is in ${escrow.status}, not SUBMITTED` };
-  const submission = escrow.submissions[0];
-
-  const promptArgs = {
-    taskDescription: escrow.taskDescription,
-    successCriteria: escrow.successCriteria,
-    submissionContent: submission.content,
-    evidenceUrl: submission.evidenceUrl,
-  };
-
-  const [a, b] = await Promise.all([
-    runGemini(buildEvaluatorAPrompt(promptArgs)),
-    runGemini(buildEvaluatorBPrompt(promptArgs)),
-  ]);
-
-  await prisma.aIEvaluation.create({
-    data: {
-      escrowId: escrow.id,
-      submissionId: submission.id,
-      verdict: a.parsed.verdict as "PASS" | "FAIL" | "NEEDS_HUMAN_REVIEW",
-      confidence: a.parsed.confidence,
-      reasoning: `[Evaluator A] ${a.parsed.reasoning}`,
-      promptVersion: VERIFIER_PROMPT_VERSION,
-      rawModelOutput: a.rawText,
-    },
-  });
-  await prisma.aIEvaluation.create({
-    data: {
-      escrowId: escrow.id,
-      submissionId: submission.id,
-      verdict: b.parsed.verdict as "PASS" | "FAIL" | "NEEDS_HUMAN_REVIEW",
-      confidence: b.parsed.confidence,
-      reasoning: `[Evaluator B] ${b.parsed.reasoning}`,
-      promptVersion: VERIFIER_PROMPT_VERSION,
-      rawModelOutput: b.rawText,
-    },
-  });
-
-  const agree = a.parsed.verdict === b.parsed.verdict;
-  const bothConfident = a.parsed.confidence >= CONFIDENCE_THRESHOLD && b.parsed.confidence >= CONFIDENCE_THRESHOLD;
-  const decisive = agree && (a.parsed.verdict === "PASS" || a.parsed.verdict === "FAIL");
-
-  if (!decisive || !bothConfident) {
-    await prisma.escrow.update({ where: { id: escrow.id }, data: { status: "DISPUTED" } });
-    return { status: "DISPUTED", evaluatorA: a.parsed, evaluatorB: b.parsed };
-  }
-
-  const passed = a.parsed.verdict === "PASS";
-  const contract = getVerifierContract();
-  const tx = await contract.submitVerdict(escrow.chainEscrowId, passed, `Consensus: ${a.parsed.reasoning.slice(0, 150)}`);
-  const receipt = await tx.wait();
-
-  await prisma.escrow.update({
-    where: { id: escrow.id },
-    data: { status: passed ? "RELEASED" : "REFUNDED", txHashRelease: receipt.hash },
-  });
-
-  return { status: passed ? "RELEASED" : "REFUNDED", txHash: receipt.hash, evaluatorA: a.parsed, evaluatorB: b.parsed };
-}
-
-function rpcResult(id: any, result: any) {
+function rpcResult(id: RpcId, result: unknown) {
   return NextResponse.json({ jsonrpc: "2.0", id, result });
 }
-function rpcError(id: any, code: number, message: string) {
+
+function rpcError(id: RpcId, code: number, message: string) {
   return NextResponse.json({ jsonrpc: "2.0", id, error: { code, message } }, { status: 200 });
 }
 
-export async function POST(req: NextRequest) {
-  let body: any;
+async function mcpHandler(request: NextRequest) {
+  let body: { id?: RpcId; method?: string; params?: Record<string, unknown> };
   try {
-    body = await req.json();
+    body = await request.json();
   } catch {
     return rpcError(null, -32700, "Parse error");
   }
-
-  const { id, method, params } = body;
+  const { id = null, method, params } = body || {};
 
   try {
-    if (method === "initialize") {
-      return rpcResult(id, {
-        protocolVersion: "2024-11-05",
-        capabilities: { tools: {} },
-        serverInfo: { name: "docket-arbiter", version: "1.0.0" },
-      });
-    }
+    switch (method) {
+      case "initialize":
+        return rpcResult(id, {
+          protocolVersion: "2024-11-05",
+          capabilities: { tools: {} },
+          serverInfo: { name: "docket-arbiter", version: "1.0.0" },
+        });
 
-    if (method === "notifications/initialized") {
-      return new NextResponse(null, { status: 202 });
-    }
+      case "notifications/initialized":
+        return new NextResponse(null, { status: 202 });
 
-    if (method === "tools/list") {
-      return rpcResult(id, { tools: TOOLS });
-    }
+      case "tools/list":
+        return rpcResult(id, { tools: TOOLS });
 
-    if (method === "tools/call") {
-      const { name, arguments: args } = params;
-      let output: any;
-
-      if (name === "fund_escrow_task") {
-        output = await callFundEscrowTask(args);
-      } else if (name === "ai_verification_settlement") {
-        output = await callAiVerificationSettlement(args);
-      } else {
-        return rpcError(id, -32601, `Unknown tool: ${name}`);
+      case "tools/call": {
+        const { name, arguments: args } = (params || {}) as {
+          name?: string;
+          arguments?: Record<string, unknown>;
+        };
+        let output: unknown;
+        if (name === "fund_escrow_task") {
+          output = await callFundEscrowTask(
+            args as { taskDescription: string; successCriteria: string; amountOkb: string }
+          );
+        } else if (name === "ai_verification_settlement") {
+          output = await callAiVerificationSettlement(args as { escrowId: string });
+        } else {
+          return rpcError(id, -32601, `Unknown tool: ${name}`);
+        }
+        return rpcResult(id, {
+          content: [{ type: "text", text: JSON.stringify(output) }],
+          isError: !!(output as { error?: unknown } | undefined)?.error,
+        });
       }
 
-      return rpcResult(id, {
-        content: [{ type: "text", text: JSON.stringify(output) }],
-        isError: !!output?.error,
-      });
+      default:
+        return rpcError(id, -32601, `Unknown method: ${method}`);
     }
-
-    return rpcError(id, -32601, `Unknown method: ${method}`);
-  } catch (err: any) {
+  } catch (err) {
     console.error("MCP error:", err);
-    return rpcError(id, -32000, err.message || "Internal error");
+    const message = err instanceof Error ? err.message : "Internal error";
+    return rpcError(id, -32000, message);
   }
 }
 
+// POST â€” the priced MCP JSON-RPC resource. withX402 handles the full x402
+// lifecycle: unpaid request -> spec-correct 402 with PaymentRequired body ->
+// client retries with signed payment -> verify -> settle on-chain -> handler
+// runs -> PAYMENT-RESPONSE header with the receipt.
+export const POST = withX402(
+  mcpHandler,
+  {
+    accepts: {
+      scheme: "exact",
+      network: X402_NETWORK,
+      payTo: PAY_TO,
+      price: PRICE,
+    },
+    description: "Docket Arbiter â€” escrow funding and AI-verified settlement, pay-per-call",
+    mimeType: "application/json",
+  },
+  x402Server
+);
+
+// GET â€” free discovery/capabilities probe. Tool discovery (what this agent
+// can do) is intentionally NOT paywalled so MCP clients and reviewers can
+// inspect capabilities before deciding to pay; the priced resource is the
+// JSON-RPC POST above (tools/call specifically incurs the charge).
 export async function GET() {
-  return NextResponse.json({ status: "ok", protocol: "mcp", tools: TOOLS.map((t) => t.name) });
+  await ensureX402Initialized().catch((err) => {
+    console.error("x402 facilitator init failed:", err);
+  });
+  return NextResponse.json({
+    name: "docket-arbiter",
+    version: "1.0.0",
+    protocol: "mcp",
+    protocolVersion: "2024-11-05",
+    payment: { required: true, scheme: "exact", network: X402_NETWORK },
+    tools: TOOLS.map((t) => t.name),
+  });
 }

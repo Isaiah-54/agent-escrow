@@ -58,8 +58,8 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json(escrow, { status: 201 });
-  } catch (err: any) {
+  } catch (err) {
     console.error("Create escrow error:", err);
-    return NextResponse.json({ error: err.message || "Internal error" }, { status: 500 });
+    return NextResponse.json({ error: (err instanceof Error ? err.message : "Internal error") }, { status: 500 });
   }
 }

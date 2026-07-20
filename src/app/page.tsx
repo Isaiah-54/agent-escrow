@@ -92,8 +92,26 @@ export default function Docket() {
   }, []);
 
   useEffect(() => {
-    fetchEscrows();
-  }, [fetchEscrows]);
+    // Inline fetch on mount (rather than calling fetchEscrows()) so state
+    // is only set after the async call resolves and only if the component
+    // is still mounted -- avoids the "set state on unmounted component"
+    // case if the user navigates away before /api/escrows responds.
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/escrows");
+        const data = await res.json();
+        if (!cancelled) setEscrows(data);
+      } catch {
+        // silent -- docket just stays stale, refresh button lets them retry
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function fileCase() {
     setFormError(null);
@@ -113,8 +131,8 @@ export default function Docket() {
       setForm({ taskDescription: "", successCriteria: "", amountOkb: "0.01" });
       setShowForm(false);
       await fetchEscrows();
-    } catch (e: any) {
-      setFormError(e.message);
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : "Failed to file case");
     } finally {
       setBusy(null);
     }
@@ -200,7 +218,7 @@ export default function Docket() {
                 Success criteria
               </label>
               <p className="text-xs text-[var(--parchment-dim)]/70 mb-1.5">
-                How will the AI judges know it's done right? Be precise — this is exactly what gets checked against the submitted work.
+                How will the AI judges know it&apos;s done right? Be precise — this is exactly what gets checked against the submitted work.
               </p>
               <textarea
                 value={form.successCriteria}
