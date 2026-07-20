@@ -48,15 +48,23 @@ function paymentChallenge() {
 
 async function verifyPayment(request: NextRequest): Promise<boolean> {
   const paymentHeader =
+    request.headers.get("PAYMENT-SIGNATURE") ||
+    request.headers.get("payment-signature") ||
     request.headers.get("x-payment") ||
     request.headers.get("payment");
 
-  if (!paymentHeader) return false;
+  if (!paymentHeader) {
+    console.log("No payment header found");
+    return false;
+  }
 
   try {
     const payload = JSON.parse(
       Buffer.from(paymentHeader, "base64").toString()
     );
+
+    console.log("Verifying payment...");
+    console.log(JSON.stringify(payload, null, 2));
 
     const result = await facilitatorClient.verify(
       payload,
@@ -74,8 +82,10 @@ async function verifyPayment(request: NextRequest): Promise<boolean> {
       }
     );
 
-    return result.isValid;
+    console.log("Verification result:", result);
+    return !!result.isValid;
   } catch (err) {
+    console.error("Payment verification failed:");
     console.error(err);
     return false;
   }

@@ -14,5 +14,10 @@ module.exports = {
       chainId: 1952,
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
     },
+    xlayerMainnet: {
+      url: "https://rpc.xlayer.tech",
+      chainId: 196,
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
+    },
   },
 };

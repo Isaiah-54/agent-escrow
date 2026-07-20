@@ -15,7 +15,7 @@ const AGENT_ESCROW_ABI = [
   "event Refunded(uint256 indexed escrowId, address indexed creator, uint256 amount)",
 ];
 
-const RPC_URL = "https://testrpc.xlayer.tech/terigon";
+const RPC_URL = "https://rpc.xlayer.tech";
 
 function getWalletContract(privateKey: string) {
   if (!privateKey) throw new Error("Missing private key for this agent wallet");
