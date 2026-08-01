@@ -26,7 +26,7 @@ function rpcError(id: RpcId, code: number, message: string) {
 }
 
 // Free handler for initialize / tools/list / notifications / unknown methods
-async function freeMcpHandler(request: NextRequest) {
+async function freeMcpHandler(request: NextRequest): Promise<NextResponse> {
   let body: { id?: RpcId; method?: string; params?: Record<string, unknown> };
   try {
     body = await request.json();
@@ -52,8 +52,6 @@ async function freeMcpHandler(request: NextRequest) {
         return rpcResult(id, { tools: TOOLS });
 
       case "tools/call": {
-        // Should never reach here when called from free path,
-        // but keep a safe fallback.
         return rpcError(id, -32000, "tools/call must go through paid path");
       }
 
@@ -68,7 +66,7 @@ async function freeMcpHandler(request: NextRequest) {
 }
 
 // Paid handler — only tools/call reaches here
-async function paidToolsCallHandler(request: NextRequest) {
+async function paidToolsCallHandler(request: NextRequest): Promise<NextResponse> {
   let body: { id?: RpcId; method?: string; params?: Record<string, unknown> };
   try {
     body = await request.json();
@@ -135,7 +133,7 @@ const paidHandler = withX402(
 );
 
 // Main POST entry: route by method so only tools/call is paid
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<NextResponse> {
   // Peek at the body to decide free vs paid (clone so body can be read again)
   const cloned = request.clone();
   let method: string | undefined;
@@ -157,8 +155,8 @@ export async function POST(request: NextRequest) {
   return freeMcpHandler(request);
 }
 
-// GET — free discovery (unchanged)
-export async function GET() {
+// GET — free discovery
+export async function GET(): Promise<NextResponse> {
   await ensureX402Initialized().catch((err) => {
     console.error("x402 facilitator init failed:", err);
   });
