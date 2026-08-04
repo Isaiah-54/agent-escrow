@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { AppKitConnectButton, useAppKitAccount } from "@reown/appkit/react";
+import { useAppKit, useAppKitAccount, useDisconnect } from "@reown/appkit/react";
 
 type Evaluation = {
   verdict: "PASS" | "FAIL" | "NEEDS_HUMAN_REVIEW";
@@ -73,6 +73,8 @@ function StampBadge({ status }: { status: string }) {
 
 export default function Docket() {
   const { address, isConnected } = useAppKitAccount();
+  const { open } = useAppKit();
+  const { disconnect } = useDisconnect();
   const [escrows, setEscrows] = useState<Escrow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -200,14 +202,28 @@ export default function Docket() {
             {showForm ? "Cancel" : "+ File New Case"}
           </button>
 
-          <div className="flex items-center gap-3">
-              <AppKitConnectButton />
-              {isConnected && address && (
-                <span className="font-mono text-xs text-[var(--parchment-dim)] border border-[var(--ink-line)] px-3 py-2.5 rounded-sm">
-                  {address.slice(0, 6)}...{address.slice(-4)}
+          <div className="flex items-center gap-3 flex-wrap">
+            {!isConnected ? (
+              <button
+                onClick={() => open({ view: "Connect" })}
+                className="font-mono text-sm uppercase tracking-wide bg-[#1683e8] text-black px-5 py-2.5 rounded-sm hover:opacity-90 transition"
+              >
+                Connect Wallet
+              </button>
+            ) : (
+              <>
+                <span className="font-mono text-sm text-[var(--parchment-dim)] border border-[var(--ink-line)] px-4 py-2.5 rounded-sm">
+                  {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Connected"}
                 </span>
-              )}
-            </div>
+                <button
+                  onClick={() => disconnect()}
+                  className="font-mono text-sm uppercase tracking-wide border border-[var(--ink-line)] text-[var(--parchment-dim)] px-4 py-2.5 rounded-sm hover:opacity-80 transition"
+                >
+                  Disconnect Wallet
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {showForm && (
