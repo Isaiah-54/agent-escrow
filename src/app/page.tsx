@@ -261,7 +261,7 @@ export default function Docket() {
                 Bounty (OKB)
               </label>
               <p className="text-xs text-[var(--parchment-dim)]/70 mb-1.5">
-                Testnet OKB locked in escrow now, released to the worker automatically only if the AI verdict is PASS.
+                OKB locked in escrow now, released to the worker automatically only if the AI verdict is PASS.
               </p>
               <input
                 value={form.amountOkb}
