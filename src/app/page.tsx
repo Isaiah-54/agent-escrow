@@ -216,8 +216,17 @@ export default function Docket() {
                   {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "Connected"}
                 </span>
                 <button
-                  onClick={() => disconnect()}
-                  className="font-mono text-sm uppercase tracking-wide border border-[var(--ink-line)] text-[var(--parchment-dim)] px-4 py-2.5 rounded-sm hover:opacity-80 transition"
+                  type="button"
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    try {
+                      await disconnect();
+                    } catch (error) {
+                      console.error("Wallet disconnect failed:", error);
+                    }
+                  }}
+                  className="font-mono text-sm uppercase tracking-wide border border-[var(--ink-line)] text-[var(--parchment-dim)] px-4 py-2.5 rounded-sm hover:opacity-80 transition cursor-pointer"
                 >
                   Disconnect Wallet
                 </button>
