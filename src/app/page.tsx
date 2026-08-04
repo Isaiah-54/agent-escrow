@@ -153,6 +153,13 @@ export default function Docket() {
        */
       const provider = new BrowserProvider(walletProvider as any);
       const signer = await provider.getSigner();
+      const signerAddress = await signer.getAddress();
+
+      console.log("=== WALLET TRANSACTION DIAGNOSTIC ===");
+      console.log("AppKit address:", address);
+      console.log("Signer address:", signerAddress);
+      console.log("Addresses match:", address?.toLowerCase() === signerAddress.toLowerCase());
+      console.log("====================================");
 
       const contractAddress =
         "0x1eA76f3cD549B3B7794d5F70F2FAcb23B7CeA692";
