@@ -158,7 +158,7 @@ export default function Docket() {
         "0x1eA76f3cD549B3B7794d5F70F2FAcb23B7CeA692";
 
       const escrowAbi = [
-        "function fileCase(string taskDescription, string successCriteria) payable"
+        "function createAndFundEscrow(string taskDescription, string successCriteria) payable returns (uint256)"
       ];
 
       const contract = new Contract(
@@ -168,7 +168,7 @@ export default function Docket() {
       );
 
       // This opens the connected wallet's transaction confirmation.
-      const tx = await contract.fileCase(
+      const tx = await contract.createAndFundEscrow(
         form.taskDescription.trim(),
         form.successCriteria.trim(),
         {
