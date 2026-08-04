@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { AppKitConnectButton } from "@reown/appkit/react";
 
 type Evaluation = {
   verdict: "PASS" | "FAIL" | "NEEDS_HUMAN_REVIEW";
@@ -24,7 +25,7 @@ type Escrow = {
   createdAt: string;
 };
 
-const EXPLORER = "https://www.okx.com/web3/explorer/xlayer-test/tx/";
+const EXPLORER = "https://www.okx.com/web3/explorer/xlayer/tx/";
 
 function formatOkb(wei: string) {
   return (Number(BigInt(wei)) / 1e18).toFixed(4);
@@ -186,16 +187,20 @@ export default function Docket() {
           Autonomous arbitration for<br />AI-to-AI commerce
         </h1>
         <p className="font-mono text-xs text-[var(--parchment-dim)] break-all">
-          Contract 0x1eA76f3cD549B3B7794d5F70F2FAcb23B7CeA692 · X Layer testnet ·{" "}
+          Contract 0x1eA76f3cD549B3B7794d5F70F2FAcb23B7CeA692 · X Layer mainnet ·{" "}
           {escrows.length} {escrows.length === 1 ? "case" : "cases"} filed
         </p>
 
-        <button
-          onClick={() => setShowForm((s) => !s)}
-          className="mt-6 font-mono text-sm uppercase tracking-wide bg-[var(--seal-gold)] text-[var(--ink)] px-5 py-2.5 rounded-sm hover:opacity-90 transition"
-        >
-          {showForm ? "Cancel" : "+ File New Case"}
-        </button>
+        <div className="mt-6 flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => setShowForm((s) => !s)}
+            className="font-mono text-sm uppercase tracking-wide bg-[var(--seal-gold)] text-[var(--ink)] px-5 py-2.5 rounded-sm hover:opacity-90 transition"
+          >
+            {showForm ? "Cancel" : "+ File New Case"}
+          </button>
+
+          <AppKitConnectButton />
+        </div>
 
         {showForm && (
           <div className="mt-6 bg-[var(--ink-raised)] border border-[var(--ink-line)] rounded-sm p-5 space-y-3">
