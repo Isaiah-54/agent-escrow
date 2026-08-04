@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
+import { useAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/react";
+import { BrowserProvider, Contract, parseEther } from "ethers";
 
 type Evaluation = {
   verdict: "PASS" | "FAIL" | "NEEDS_HUMAN_REVIEW";
@@ -74,6 +75,7 @@ function StampBadge({ status }: { status: string }) {
 export default function Docket() {
   const { address, isConnected } = useAppKitAccount();
   const { open } = useAppKit();
+  const { walletProvider } = useAppKitProvider("eip155");
   const [escrows, setEscrows] = useState<Escrow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -118,24 +120,113 @@ export default function Docket() {
 
   async function fileCase() {
     setFormError(null);
-    if (!form.taskDescription || !form.successCriteria || !form.amountOkb) {
+
+    if (!isConnected || !address) {
+      open({ view: "Connect" });
+      return;
+    }
+
+    if (!walletProvider) {
+      setFormError("Wallet provider is not available. Please reconnect your wallet.");
+      return;
+    }
+
+    if (!form.taskDescription.trim() || !form.successCriteria.trim() || !form.amountOkb) {
       setFormError("All fields are required to file a case.");
       return;
     }
+
+    const amount = Number(form.amountOkb);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setFormError("Enter a valid OKB bounty amount.");
+      return;
+    }
+
     setBusy("create");
+
     try {
+      /*
+       * IMPORTANT:
+       * The connected user's wallet signs the transaction.
+       * The backend no longer silently charges a server wallet.
+       */
+      const provider = new BrowserProvider(walletProvider);
+      const signer = await provider.getSigner();
+
+      const contractAddress =
+        "0x1eA76f3cD549B3B7794d5F70F2FAcb23B7CeA692";
+
+      const escrowAbi = [
+        "function fileCase(string taskDescription, string successCriteria) payable"
+      ];
+
+      const contract = new Contract(
+        contractAddress,
+        escrowAbi,
+        signer
+      );
+
+      // This opens the connected wallet's transaction confirmation.
+      const tx = await contract.fileCase(
+        form.taskDescription.trim(),
+        form.successCriteria.trim(),
+        {
+          value: parseEther(form.amountOkb)
+        }
+      );
+
+      console.log("Escrow transaction submitted:", tx.hash);
+
+      await tx.wait();
+
+      console.log("Escrow transaction confirmed:", tx.hash);
+
+      // Tell the existing backend about the confirmed on-chain case.
       const res = await fetch("/api/escrows", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          ...form,
+          walletAddress: address,
+          txHashCreate: tx.hash
+        })
       });
+
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to file case");
-      setForm({ taskDescription: "", successCriteria: "", amountOkb: "0.01" });
+
+      if (!res.ok) {
+        throw new Error(
+          data.error || "Transaction succeeded but the case could not be recorded."
+        );
+      }
+
+      setForm({
+        taskDescription: "",
+        successCriteria: "",
+        amountOkb: "0.01"
+      });
+
       setShowForm(false);
       await fetchEscrows();
-    } catch (e) {
-      setFormError(e instanceof Error ? e.message : "Failed to file case");
+
+      alert(
+        "Case filed successfully.\n\nTransaction: " + tx.hash
+      );
+
+    } catch (e: any) {
+      console.error("File case transaction failed:", e);
+
+      const message =
+        e?.shortMessage ||
+        e?.reason ||
+        e?.message ||
+        "Transaction was rejected or failed.";
+
+      setFormError(message);
+
     } finally {
       setBusy(null);
     }
