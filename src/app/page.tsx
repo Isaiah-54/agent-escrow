@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useAppKit, useAppKitAccount, useDisconnect } from "@reown/appkit/react";
+import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
 
 type Evaluation = {
   verdict: "PASS" | "FAIL" | "NEEDS_HUMAN_REVIEW";
@@ -74,7 +74,6 @@ function StampBadge({ status }: { status: string }) {
 export default function Docket() {
   const { address, isConnected } = useAppKitAccount();
   const { open } = useAppKit();
-  const { disconnect } = useDisconnect();
   const [escrows, setEscrows] = useState<Escrow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -217,18 +216,10 @@ export default function Docket() {
                 </span>
                 <button
                   type="button"
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    try {
-                      await disconnect();
-                    } catch (error) {
-                      console.error("Wallet disconnect failed:", error);
-                    }
-                  }}
+                  onClick={() => open({ view: "Account" })}
                   className="font-mono text-sm uppercase tracking-wide border border-[var(--ink-line)] text-[var(--parchment-dim)] px-4 py-2.5 rounded-sm hover:opacity-80 transition cursor-pointer"
                 >
-                  Disconnect Wallet
+                  Wallet
                 </button>
               </>
             )}
