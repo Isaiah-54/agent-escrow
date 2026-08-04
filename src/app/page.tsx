@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { AppKitConnectButton } from "@reown/appkit/react";
+import { AppKitConnectButton, useAppKitAccount } from "@reown/appkit/react";
 
 type Evaluation = {
   verdict: "PASS" | "FAIL" | "NEEDS_HUMAN_REVIEW";
@@ -72,6 +72,7 @@ function StampBadge({ status }: { status: string }) {
 }
 
 export default function Docket() {
+  const { address, isConnected } = useAppKitAccount();
   const [escrows, setEscrows] = useState<Escrow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -199,7 +200,14 @@ export default function Docket() {
             {showForm ? "Cancel" : "+ File New Case"}
           </button>
 
-          <AppKitConnectButton />
+          <div className="flex items-center gap-3">
+              <AppKitConnectButton />
+              {isConnected && address && (
+                <span className="font-mono text-xs text-[var(--parchment-dim)] border border-[var(--ink-line)] px-3 py-2.5 rounded-sm">
+                  {address.slice(0, 6)}...{address.slice(-4)}
+                </span>
+              )}
+            </div>
         </div>
 
         {showForm && (
