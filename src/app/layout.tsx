@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, IBM_Plex_Mono, Work_Sans } from "next/font/google";
 import "./globals.css";
+import { AppKitProvider } from "@/context/appkit";
 
 const fraunces = Fraunces({
   subsets: ["latin"],
@@ -29,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body className={`${fraunces.variable} ${plexMono.variable} ${workSans.variable} antialiased`}>
-        {children}
+        <AppKitProvider>{children}</AppKitProvider>
       </body>
     </html>
   );
