@@ -151,7 +151,7 @@ export default function Docket() {
        * The connected user's wallet signs the transaction.
        * The backend no longer silently charges a server wallet.
        */
-      const provider = new BrowserProvider(walletProvider);
+      const provider = new BrowserProvider(walletProvider as any);
       const signer = await provider.getSigner();
 
       const contractAddress =
