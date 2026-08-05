@@ -178,6 +178,14 @@ export default function Docket() {
 
       const providerAccount = providerAccounts[0];
 
+      /*
+       * TEMPORARY RUNTIME DIAGNOSTIC
+       * Show exactly which account AppKit and the wallet provider report.
+       */
+      const diagnosticMessage =
+        "AppKit account: " + address +
+        "\nProvider account: " + providerAccount;
+
       console.log("=== WALLET TRANSACTION DIAGNOSTIC ===");
       console.log("AppKit address:", address);
       console.log("Provider account:", providerAccount);
@@ -191,6 +199,14 @@ export default function Docket() {
         !address ||
         address.toLowerCase() !== providerAccount.toLowerCase()
       ) {
+        setFormError(
+          "WALLET MISMATCH DETECTED\n\n" +
+          diagnosticMessage +
+          "\n\nTransaction cancelled. No OKB was sent."
+        );
+        setBusy(null);
+        return;
+      }
         throw new Error(
           `Wallet account mismatch. AppKit shows ${address}, but the wallet provider returned ${providerAccount}. Transaction cancelled.`
         );
