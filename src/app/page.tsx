@@ -151,24 +151,59 @@ export default function Docket() {
        * The connected user's wallet signs the transaction.
        * The backend no longer silently charges a server wallet.
        */
-      const provider = new BrowserProvider(walletProvider as any);
-      const signer = await provider.getSigner();
-      const signerAddress = await signer.getAddress();
-      const addressesMatch =
-        address?.toLowerCase() === signerAddress.toLowerCase();
+      /*
+       * Verify that the wallet provider itself controls the same
+       * EVM account that AppKit displays before creating a signer.
+       */
+      const rawProvider = walletProvider as any;
+
+      let providerAccounts: string[];
+
+      try {
+        providerAccounts = await rawProvider.request({
+          method: "eth_requestAccounts"
+        });
+      } catch (e: any) {
+        throw new Error(
+          e?.message || "The connected wallet did not provide an EVM account."
+        );
+      }
+
+      if (
+        !Array.isArray(providerAccounts) ||
+        providerAccounts.length === 0
+      ) {
+        throw new Error("No EVM account was returned by the connected wallet.");
+      }
+
+      const providerAccount = providerAccounts[0];
 
       console.log("=== WALLET TRANSACTION DIAGNOSTIC ===");
       console.log("AppKit address:", address);
-      console.log("Signer address:", signerAddress);
-      console.log("Addresses match:", addressesMatch);
+      console.log("Provider account:", providerAccount);
+      console.log(
+        "Accounts match:",
+        address?.toLowerCase() === providerAccount.toLowerCase()
+      );
       console.log("====================================");
 
-      if (!addressesMatch) {
-        setFormError(
-          `Wallet mismatch. Connected: ${address} | Transaction signer: ${signerAddress}`
+      if (
+        !address ||
+        address.toLowerCase() !== providerAccount.toLowerCase()
+      ) {
+        throw new Error(
+          `Wallet account mismatch. AppKit shows ${address}, but the wallet provider returned ${providerAccount}. Transaction cancelled.`
         );
-        setBusy(null);
-        return;
+      }
+
+      const provider = new BrowserProvider(rawProvider);
+      const signer = await provider.getSigner(providerAccount);
+      const signerAddress = await signer.getAddress();
+
+      if (signerAddress.toLowerCase() !== address.toLowerCase()) {
+        throw new Error(
+          `Signer mismatch. Connected wallet is ${address}, but ethers returned ${signerAddress}. Transaction cancelled.`
+        );
       }
 
       const contractAddress =
