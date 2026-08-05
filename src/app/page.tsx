@@ -131,7 +131,11 @@ export default function Docket() {
       return;
     }
 
-    if (!form.taskDescription.trim() || !form.successCriteria.trim() || !form.amountOkb) {
+    if (
+      !form.taskDescription.trim() ||
+      !form.successCriteria.trim() ||
+      !form.amountOkb
+    ) {
       setFormError("All fields are required to file a case.");
       return;
     }
@@ -147,66 +151,42 @@ export default function Docket() {
 
     try {
       /*
-       * IMPORTANT:
-       * The connected user's wallet signs the transaction.
-       * The backend no longer silently charges a server wallet.
-       */
-      /*
-       * Verify that the wallet provider itself controls the same
-       * EVM account that AppKit displays before creating a signer.
+       * The connected wallet is the wallet that signs and pays
+       * for this escrow transaction.
        */
       const rawProvider = walletProvider as any;
 
-      let providerAccounts: string[];
-
-      try {
-        providerAccounts = await rawProvider.request({
-          method: "eth_requestAccounts"
-        });
-      } catch (e: any) {
-        throw new Error(
-          e?.message || "The connected wallet did not provide an EVM account."
-        );
-      }
+      const providerAccounts = await rawProvider.request({
+        method: "eth_requestAccounts"
+      });
 
       if (
         !Array.isArray(providerAccounts) ||
         providerAccounts.length === 0
       ) {
-        throw new Error("No EVM account was returned by the connected wallet.");
+        throw new Error(
+          "No EVM account was returned by the connected wallet."
+        );
       }
 
       const providerAccount = providerAccounts[0];
-
-      /*
-       * TEMPORARY RUNTIME DIAGNOSTIC
-       * Show exactly which account AppKit and the wallet provider report.
-       */
-      const diagnosticMessage =
-        "AppKit account: " + address +
-        "\nProvider account: " + providerAccount;
 
       console.log("=== WALLET TRANSACTION DIAGNOSTIC ===");
       console.log("AppKit address:", address);
       console.log("Provider account:", providerAccount);
       console.log(
         "Accounts match:",
-        address?.toLowerCase() === providerAccount.toLowerCase()
+        address.toLowerCase() === providerAccount.toLowerCase()
       );
       console.log("====================================");
 
+      /*
+       * Never allow a transaction if AppKit and the actual
+       * wallet provider report different accounts.
+       */
       if (
-        !address ||
         address.toLowerCase() !== providerAccount.toLowerCase()
       ) {
-        setFormError(
-          "WALLET MISMATCH DETECTED\n\n" +
-          diagnosticMessage +
-          "\n\nTransaction cancelled. No OKB was sent."
-        );
-        setBusy(null);
-        return;
-      }
         throw new Error(
           `Wallet account mismatch. AppKit shows ${address}, but the wallet provider returned ${providerAccount}. Transaction cancelled.`
         );
@@ -216,7 +196,9 @@ export default function Docket() {
       const signer = await provider.getSigner(providerAccount);
       const signerAddress = await signer.getAddress();
 
-      if (signerAddress.toLowerCase() !== address.toLowerCase()) {
+      if (
+        signerAddress.toLowerCase() !== address.toLowerCase()
+      ) {
         throw new Error(
           `Signer mismatch. Connected wallet is ${address}, but ethers returned ${signerAddress}. Transaction cancelled.`
         );
@@ -235,7 +217,11 @@ export default function Docket() {
         signer
       );
 
-      // This opens the connected wallet's transaction confirmation.
+      /*
+       * This is the important part:
+       * ethers sends the transaction through the connected wallet,
+       * so the wallet should display its transaction confirmation.
+       */
       const tx = await contract.createAndFundEscrow(
         form.taskDescription.trim(),
         form.successCriteria.trim(),
@@ -250,7 +236,6 @@ export default function Docket() {
 
       console.log("Escrow transaction confirmed:", tx.hash);
 
-      // Tell the existing backend about the confirmed on-chain case.
       const res = await fetch("/api/escrows", {
         method: "POST",
         headers: {
@@ -267,7 +252,8 @@ export default function Docket() {
 
       if (!res.ok) {
         throw new Error(
-          data.error || "Transaction succeeded but the case could not be recorded."
+          data.error ||
+          "Transaction succeeded but the case could not be recorded."
         );
       }
 
@@ -278,12 +264,12 @@ export default function Docket() {
       });
 
       setShowForm(false);
+
       await fetchEscrows();
 
       alert(
         "Case filed successfully.\n\nTransaction: " + tx.hash
       );
-
     } catch (e: any) {
       console.error("File case transaction failed:", e);
 
@@ -294,7 +280,6 @@ export default function Docket() {
         "Transaction was rejected or failed.";
 
       setFormError(message);
-
     } finally {
       setBusy(null);
     }
