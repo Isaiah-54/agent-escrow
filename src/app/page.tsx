@@ -370,7 +370,7 @@ export default function Docket() {
                       console.error("Wallet disconnect failed:", e);
                     }
                   }}
-                  className="font-mono text-sm uppercase tracking-wide border border-[var(--ink-line)] text-[var(--parchment-dim)] px-4 py-2.5 rounded-sm hover:opacity-80 transition cursor-pointer"
+                  className="relative z-[9999] pointer-events-auto font-mono text-sm uppercase tracking-wide border border-[var(--ink-line)] text-[var(--parchment-dim)] px-4 py-2.5 rounded-sm hover:opacity-80 transition cursor-pointer"
                 >
                   Disconnect
                 </button>
