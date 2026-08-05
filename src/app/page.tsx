@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { useAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/react";
+import { useAppKit, useAppKitAccount, useAppKitProvider, useDisconnect } from "@reown/appkit/react";
 import { BrowserProvider, Contract, parseEther } from "ethers";
 
 type Evaluation = {
@@ -74,7 +74,8 @@ function StampBadge({ status }: { status: string }) {
 
 export default function Docket() {
   const { address, isConnected } = useAppKitAccount();
-  const { open, disconnect } = useAppKit();
+  const { open } = useAppKit();
+  const { disconnect } = useDisconnect();
   const { walletProvider } = useAppKitProvider("eip155");
   const [escrows, setEscrows] = useState<Escrow[]>([]);
   const [loading, setLoading] = useState(true);
