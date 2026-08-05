@@ -364,7 +364,7 @@ export default function Docket() {
                   onClick={async () => {
                     try {
                       console.log("Disconnect button clicked");
-                      await disconnect({ chainNamespace: "eip155" });
+                      await disconnect();
                       console.log("Wallet disconnected");
                     } catch (e) {
                       console.error("Wallet disconnect failed:", e);
