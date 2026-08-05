@@ -74,7 +74,7 @@ function StampBadge({ status }: { status: string }) {
 
 export default function Docket() {
   const { address, isConnected } = useAppKitAccount();
-  const { open } = useAppKit();
+  const { open, disconnect } = useAppKit();
   const { walletProvider } = useAppKitProvider("eip155");
   const [escrows, setEscrows] = useState<Escrow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -375,10 +375,16 @@ export default function Docket() {
                 </span>
                 <button
                   type="button"
-                  onClick={() => open({ view: "Account" })}
+                  onClick={async () => {
+                    try {
+                      await disconnect();
+                    } catch (e) {
+                      console.error("Wallet disconnect failed:", e);
+                    }
+                  }}
                   className="font-mono text-sm uppercase tracking-wide border border-[var(--ink-line)] text-[var(--parchment-dim)] px-4 py-2.5 rounded-sm hover:opacity-80 transition cursor-pointer"
                 >
-                  Wallet
+                  Disconnect
                 </button>
               </>
             )}
