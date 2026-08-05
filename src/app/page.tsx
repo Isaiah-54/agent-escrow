@@ -164,9 +164,11 @@ export default function Docket() {
       console.log("====================================");
 
       if (!addressesMatch) {
-        throw new Error(
-          `Wallet mismatch: AppKit shows ${address}, but transaction provider uses ${signerAddress}.`
+        setFormError(
+          `Wallet mismatch. Connected: ${address} | Transaction signer: ${signerAddress}`
         );
+        setBusy(null);
+        return;
       }
 
       const contractAddress =
