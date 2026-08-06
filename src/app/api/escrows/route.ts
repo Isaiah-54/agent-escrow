@@ -19,6 +19,10 @@ export async function GET() {
 // POST /api/escrows
 // - If txHashCreate + walletAddress are provided: RECORD ONLY (UI path; user already paid on-chain).
 // - Otherwise: server creates+funds with CREATOR_PRIVATE_KEY (MCP / agent path).
+
+// POST /api/escrows
+// - If txHashCreate + walletAddress: RECORD ONLY (parse chainEscrowId from receipt).
+// - Else: server creates+funds with CREATOR_PRIVATE_KEY (MCP path).
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -37,10 +41,46 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // UI path: client already signed & paid with the connected wallet
+    // UI path: client already signed & paid
     if (txHashCreate && walletAddress) {
       const creatorUser = await getOrCreateUser(walletAddress);
       const value = ethers.parseEther(String(amountOkb));
+
+      // Parse on-chain escrow id from the client's tx receipt
+      let chainEscrowId: string | null = null;
+      try {
+        const provider = new ethers.JsonRpcProvider("https://rpc.xlayer.tech");
+        const receipt = await provider.getTransactionReceipt(txHashCreate);
+        if (!receipt) {
+          return NextResponse.json(
+            { error: "Transaction receipt not found yet. Wait a few seconds and retry." },
+            { status: 400 }
+          );
+        }
+        if (Number(receipt.status) !== 1) {
+          return NextResponse.json(
+            { error: "Transaction failed on-chain; cannot record escrow." },
+            { status: 400 }
+          );
+        }
+        // Reuse the same ABI parser as server path
+        const creatorContract = getCreatorContract();
+        chainEscrowId = parseEscrowIdFromReceipt(
+          receipt as unknown as ethers.ContractTransactionReceipt,
+          creatorContract
+        );
+      } catch (parseErr) {
+        console.error("Failed to parse chainEscrowId from client tx:", parseErr);
+        return NextResponse.json(
+          {
+            error:
+              parseErr instanceof Error
+                ? parseErr.message
+                : "Could not parse EscrowCreated event from tx",
+          },
+          { status: 400 }
+        );
+      }
 
       const escrow = await prisma.escrow.create({
         data: {
@@ -49,7 +89,7 @@ export async function POST(req: NextRequest) {
           amount: value.toString(),
           status: "FUNDED",
           creatorId: creatorUser.id,
-          chainEscrowId: null,
+          chainEscrowId,
           contractAddress: process.env.NEXT_PUBLIC_CONTRACT_ADDRESS,
           txHashCreate,
         },
@@ -60,14 +100,14 @@ export async function POST(req: NextRequest) {
           escrowId: escrow.id,
           action: "ESCROW_CREATED",
           actor: walletAddress,
-          details: `Client-funded ${amountOkb} OKB, tx ${txHashCreate}`,
+          details: `Client-funded ${amountOkb} OKB, chain escrow #${chainEscrowId}, tx ${txHashCreate}`,
         },
       });
 
       return NextResponse.json(escrow, { status: 201 });
     }
 
-    // MCP / server path: CREATOR_PRIVATE_KEY pays
+    // MCP / server path
     const creatorContract = getCreatorContract();
     const creatorAddress = (creatorContract.runner as ethers.Wallet).address;
     const creatorUser = await getOrCreateUser(creatorAddress);
@@ -112,4 +152,5 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
 
