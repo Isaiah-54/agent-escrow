@@ -287,10 +287,88 @@ export default function Docket() {
   }
 
   async function accept(id: string) {
+    setFormError(null);
+    if (!isConnected || !address) {
+      open({ view: "Connect" });
+      return;
+    }
+    if (!walletProvider) {
+      setFormError("Wallet provider is not available. Please reconnect.");
+      return;
+    }
+
+    const escrow = escrows.find((e) => e.id === id);
+    if (!escrow) {
+      setFormError("Escrow not found in local list. Refresh and try again.");
+      return;
+    }
+    if (!escrow.chainEscrowId) {
+      setFormError(
+        "This case has no on-chain escrow id (chainEscrowId). File a new case after the latest deploy, or backfill this case."
+      );
+      return;
+    }
+
     setBusy(id);
-    await fetch(`/api/escrows/${id}/accept`, { method: "POST" });
-    await fetchEscrows();
-    setBusy(null);
+    try {
+      const rawProvider = walletProvider as any;
+      const accounts: string[] = await rawProvider.request({
+        method: "eth_requestAccounts",
+      });
+      if (!accounts?.length) {
+        throw new Error("No EVM account returned by the wallet.");
+      }
+      const providerAccount = accounts[0];
+      if (providerAccount.toLowerCase() !== address.toLowerCase()) {
+        throw new Error(
+          `WALLET MISMATCH: AppKit=${address}, Provider=${providerAccount}`
+        );
+      }
+
+      const provider = new BrowserProvider(rawProvider);
+      const signer = await provider.getSigner(providerAccount);
+      const signerAddress = await signer.getAddress();
+      if (signerAddress.toLowerCase() !== address.toLowerCase()) {
+        throw new Error(
+          `WALLET MISMATCH: AppKit=${address}, Signer=${signerAddress}`
+        );
+      }
+
+      const contractAddress =
+        "0x1eA76f3cD549B3B7794d5F70F2FAcb23B7CeA692";
+      const contract = new Contract(
+        contractAddress,
+        ["function acceptTask(uint256 escrowId) external"],
+        signer
+      );
+
+      const tx = await contract.acceptTask(BigInt(escrow.chainEscrowId));
+      await tx.wait();
+
+      const res = await fetch(`/api/escrows/${id}/accept`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          walletAddress: address,
+          txHash: tx.hash,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          data.error ||
+            "On-chain accept succeeded but recording failed."
+        );
+      }
+      await fetchEscrows();
+    } catch (e: any) {
+      console.error("Accept failed:", e);
+      setFormError(
+        e?.shortMessage || e?.reason || e?.message || "Accept failed"
+      );
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function submit(id: string) {
