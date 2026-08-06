@@ -365,7 +365,7 @@ export default function Docket() {
                     alert("DISCONNECT BUTTON CLICKED");
 
                     try {
-                      await disconnect();
+                      await disconnect({ namespace: "eip155" });
                       alert("DISCONNECT COMMAND COMPLETED");
                     } catch (e: any) {
                       alert(
