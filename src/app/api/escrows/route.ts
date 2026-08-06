@@ -23,6 +23,10 @@ export async function GET() {
 // POST /api/escrows
 // - If txHashCreate + walletAddress: RECORD ONLY (parse chainEscrowId from receipt).
 // - Else: server creates+funds with CREATOR_PRIVATE_KEY (MCP path).
+
+// POST /api/escrows
+// - txHashCreate + walletAddress: RECORD ONLY (parse chainEscrowId from receipt)
+// - else: server funds with CREATOR_PRIVATE_KEY (MCP)
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -41,42 +45,49 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // UI path: client already signed & paid
     if (txHashCreate && walletAddress) {
       const creatorUser = await getOrCreateUser(walletAddress);
       const value = ethers.parseEther(String(amountOkb));
 
-      // Parse on-chain escrow id from the client's tx receipt
-      let chainEscrowId: string | null = null;
-      try {
-        const provider = new ethers.JsonRpcProvider("https://rpc.xlayer.tech");
-        const receipt = await provider.getTransactionReceipt(txHashCreate);
-        if (!receipt) {
-          return NextResponse.json(
-            { error: "Transaction receipt not found yet. Wait a few seconds and retry." },
-            { status: 400 }
-          );
-        }
-        if (Number(receipt.status) !== 1) {
-          return NextResponse.json(
-            { error: "Transaction failed on-chain; cannot record escrow." },
-            { status: 400 }
-          );
-        }
-        // Reuse the same ABI parser as server path
-        const creatorContract = getCreatorContract();
-        chainEscrowId = parseEscrowIdFromReceipt(
-          receipt as unknown as ethers.ContractTransactionReceipt,
-          creatorContract
+      const provider = new ethers.JsonRpcProvider("https://rpc.xlayer.tech");
+      const receipt = await provider.getTransactionReceipt(txHashCreate);
+      if (!receipt) {
+        return NextResponse.json(
+          { error: "Transaction receipt not found yet. Wait a few seconds and retry." },
+          { status: 400 }
         );
-      } catch (parseErr) {
-        console.error("Failed to parse chainEscrowId from client tx:", parseErr);
+      }
+      if (Number(receipt.status) !== 1) {
+        return NextResponse.json(
+          { error: "On-chain transaction failed; cannot record escrow." },
+          { status: 400 }
+        );
+      }
+
+      // Parse EscrowCreated without needing a live signer
+      const iface = new ethers.Interface([
+        "event EscrowCreated(uint256 indexed escrowId, address indexed creator, string taskDescription, string successCriteria)",
+      ]);
+      let chainEscrowId: string | null = null;
+      for (const log of receipt.logs) {
+        try {
+          const parsed = iface.parseLog({
+            topics: log.topics as string[],
+            data: log.data,
+          });
+          if (parsed?.name === "EscrowCreated") {
+            chainEscrowId = parsed.args.escrowId.toString();
+            break;
+          }
+        } catch {
+          // not our event
+        }
+      }
+      if (!chainEscrowId) {
         return NextResponse.json(
           {
             error:
-              parseErr instanceof Error
-                ? parseErr.message
-                : "Could not parse EscrowCreated event from tx",
+              "EscrowCreated event not found in tx. Wrong contract or failed create?",
           },
           { status: 400 }
         );
@@ -107,7 +118,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(escrow, { status: 201 });
     }
 
-    // MCP / server path
     const creatorContract = getCreatorContract();
     const creatorAddress = (creatorContract.runner as ethers.Wallet).address;
     const creatorUser = await getOrCreateUser(creatorAddress);
@@ -152,5 +162,6 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
 
 
