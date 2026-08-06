@@ -362,12 +362,16 @@ export default function Docket() {
                 <button
                   type="button"
                   onClick={async () => {
+                    alert("DISCONNECT BUTTON CLICKED");
+
                     try {
-                      console.log("Disconnect button clicked");
                       await disconnect();
-                      console.log("Wallet disconnected");
-                    } catch (e) {
-                      console.error("Wallet disconnect failed:", e);
+                      alert("DISCONNECT COMMAND COMPLETED");
+                    } catch (e: any) {
+                      alert(
+                        "DISCONNECT ERROR: " +
+                        (e?.message || String(e))
+                      );
                     }
                   }}
                   className="relative z-[9999] pointer-events-auto font-mono text-sm uppercase tracking-wide border border-[var(--ink-line)] text-[var(--parchment-dim)] px-4 py-2.5 rounded-sm hover:opacity-80 transition cursor-pointer"
