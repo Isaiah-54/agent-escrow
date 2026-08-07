@@ -555,19 +555,7 @@ export default function Docket() {
                 </span>
                 <button
                   type="button"
-                  onClick={async () => {
-                    alert("DISCONNECT BUTTON CLICKED");
-
-                    try {
-                      await disconnect({ namespace: "eip155" });
-                      alert("DISCONNECT COMMAND COMPLETED");
-                    } catch (e: any) {
-                      alert(
-                        "DISCONNECT ERROR: " +
-                        (e?.message || String(e))
-                      );
-                    }
-                  }}
+                  onClick={() => { void handleDisconnect(); }}
                   className="relative z-[9999] pointer-events-auto font-mono text-sm uppercase tracking-wide border border-[var(--ink-line)] text-[var(--parchment-dim)] px-4 py-2.5 rounded-sm hover:opacity-80 transition cursor-pointer"
                 >
                   Disconnect
