@@ -371,18 +371,94 @@ export default function Docket() {
     }
   }
 
+
   async function submit(id: string) {
+    setFormError(null);
     const content = drafts[id];
-    if (!content) return;
+    if (!content?.trim()) {
+      setFormError("Enter the completed work before submitting.");
+      return;
+    }
+    if (!isConnected || !address) {
+      open({ view: "Connect" });
+      return;
+    }
+    if (!walletProvider) {
+      setFormError("Wallet provider is not available. Please reconnect.");
+      return;
+    }
+
+    const escrow = escrows.find((e) => e.id === id);
+    if (!escrow?.chainEscrowId) {
+      setFormError("Missing on-chain escrow id. Cannot submit.");
+      return;
+    }
+
     setBusy(id);
-    await fetch(`/api/escrows/${id}/submit`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-    });
-    await fetchEscrows();
-    setBusy(null);
+    try {
+      const rawProvider = walletProvider as any;
+      const accounts: string[] = await rawProvider.request({
+        method: "eth_requestAccounts",
+      });
+      if (!accounts?.length) throw new Error("No EVM account returned by the wallet.");
+      const providerAccount = accounts[0];
+      if (providerAccount.toLowerCase() !== address.toLowerCase()) {
+        throw new Error(
+          `WALLET MISMATCH: AppKit=${address}, Provider=${providerAccount}`
+        );
+      }
+
+      const provider = new BrowserProvider(rawProvider);
+      const signer = await provider.getSigner(providerAccount);
+      const signerAddress = await signer.getAddress();
+      if (signerAddress.toLowerCase() !== address.toLowerCase()) {
+        throw new Error(
+          `WALLET MISMATCH: AppKit=${address}, Signer=${signerAddress}`
+        );
+      }
+
+      const contractAddress =
+        "0x1eA76f3cD549B3B7794d5F70F2FAcb23B7CeA692";
+      const contract = new Contract(
+        contractAddress,
+        ["function submitResult(uint256 escrowId, string resultURI) external"],
+        signer
+      );
+
+      // Short on-chain pointer; full text stored in API/DB
+      const resultURI = `db:pending:${id}`;
+      const tx = await contract.submitResult(
+        BigInt(escrow.chainEscrowId),
+        resultURI
+      );
+      await tx.wait();
+
+      const res = await fetch(`/api/escrows/${id}/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: content.trim(),
+          walletAddress: address,
+          txHash: tx.hash,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          data.error || "On-chain submit succeeded but recording failed."
+        );
+      }
+      await fetchEscrows();
+    } catch (e: any) {
+      console.error("Submit failed:", e);
+      setFormError(
+        e?.shortMessage || e?.reason || e?.message || "Submit failed"
+      );
+    } finally {
+      setBusy(null);
+    }
   }
+
 
   async function evaluate(id: string) {
     setBusy(id);
