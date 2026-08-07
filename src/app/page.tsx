@@ -76,6 +76,46 @@ export default function Docket() {
   const { address, isConnected } = useAppKitAccount();
   const { open } = useAppKit();
   const { disconnect } = useDisconnect();
+
+  async function handleDisconnect() {
+    setFormError(null);
+    try {
+      // Prefer EVM namespace (X Layer / AppKit eip155)
+      try {
+        await disconnect({ namespace: "eip155" });
+      } catch {
+        // Fall back to disconnecting all namespaces
+        await disconnect();
+      }
+    } catch (e: any) {
+      // AppKit sometimes throws even after a successful local session clear.
+      // Treat as soft failure — UI still returns to Connect state after reload.
+      console.warn("Disconnect warning:", e?.message || e);
+      setFormError(null);
+    }
+    // Force a clean UI state if AppKit leaves isConnected true briefly
+    try {
+      if (typeof window !== "undefined") {
+        // Clear common WC/AppKit leftovers that block reconnect
+        const keys = Object.keys(localStorage);
+        for (const k of keys) {
+          if (
+            k.startsWith("wc@") ||
+            k.startsWith("@w3m") ||
+            k.startsWith("@appkit") ||
+            k.includes("walletconnect") ||
+            k.includes("W3M")
+          ) {
+            localStorage.removeItem(k);
+          }
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+
   const { walletProvider } = useAppKitProvider("eip155");
   const [escrows, setEscrows] = useState<Escrow[]>([]);
   const [loading, setLoading] = useState(true);
